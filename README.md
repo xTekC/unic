@@ -1,7 +1,7 @@
 <div align="center">
 
 # unic
-...
+Unicode Compiler.
 
 <!-- <a href="https://crates.io/crates/unic/"><img src="https://img.shields.io/crates/v/unic?style=flat&amp;labelColor=032a1a&amp;color=065535&amp;logo=Rust&amp;logoColor=white" alt="Crate Release"></a> -->
 <br>
