@@ -1,0 +1,36 @@
+[package]
+name = "unic"
+version = "0.0.0"
+description = "Unicode Compiler"
+authors = ["xTekC"]
+repository = "https://github.com/xTekC/unic"
+readme = "README.md"
+homepage = "https://github.com/xTekC/unic"
+documentation = "https://github.com/xTekC/unic/blob/main/README.md"
+categories = ["command-line-utilities", "development-tools"]
+keywords = ["cli", "async"]
+# default-run = "unic -h"
+publish = false
+# include = "[...]"
+# exclude = "[...]"
+# workspace = "..."
+# links = "..."
+# build = "build.rs"
+rust-version = "1.69.0"
+edition = "2021"
+license = "MPL-2.0"
+
+[[bin]]
+name = "unic"
+path = "src/bin/main.rs"
+
+[dependencies]
+clap = { version = "4.2.7", features = ["derive"] }
+tokio = { version = "1.28.1", features = ["rt-multi-thread", "macros"] }
+
+[profile.rel-opt]
+inherits = "release"
+opt-level = "s"
+lto = true
+codegen-units = 1
+strip = true

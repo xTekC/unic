@@ -1,0 +1,194 @@
+##############################
+#                            #
+#  Copyright (c) xTekC.      #
+#  Licensed under MPL-2.0.   #
+#  See LICENSE for details.  # 
+#                            #
+##############################
+
+name: Continuous Deployment
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+jobs:
+  changelog:
+    name: Generate changelog
+    runs-on: ubuntu-latest
+    outputs:
+      release_body: ${{ steps.git-cliff.outputs.content }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Generate a changelog
+        uses: orhun/git-cliff-action@v1
+        id: git-cliff
+        with:
+          config: config/cliff.toml
+          args: --latest --strip header
+
+  publish-github:
+    name: Publish on GitHub
+    needs: changelog
+    runs-on: ${{ matrix.build.OS }}
+    strategy:
+      fail-fast: false
+      matrix:
+        build:
+          - {
+              OS: ubuntu-latest,
+              TOOLCHAIN: stable,
+              TARGET: riscv64gc-unknown-linux-gnu,
+            }
+          - {
+              OS: ubuntu-latest,
+              TOOLCHAIN: stable,
+              TARGET: aarch64-linux-android,
+            }
+          - {
+              OS: ubuntu-latest,
+              TOOLCHAIN: stable,
+              TARGET: aarch64-unknown-linux-gnu,
+            }
+          - {
+              OS: ubuntu-latest,
+              TOOLCHAIN: stable,
+              TARGET: aarch64-unknown-linux-musl,
+            }
+          - {
+              OS: ubuntu-latest,
+              TOOLCHAIN: stable,
+              TARGET: x86_64-unknown-linux-gnu,
+            }
+          - {
+              OS: ubuntu-latest,
+              TOOLCHAIN: stable,
+              TARGET: x86_64-unknown-linux-musl,
+            }
+          - {
+              OS: ubuntu-latest,
+              TOOLCHAIN: stable,
+              TARGET: x86_64-unknown-freebsd,
+            }
+          - {
+              OS: ubuntu-latest,
+              TOOLCHAIN: stable,
+              TARGET: x86_64-unknown-netbsd,
+            }
+          - {
+              OS: macos-latest,
+              TOOLCHAIN: stable,
+              TARGET: aarch64-apple-darwin,
+            }
+          - { OS: macos-latest, 
+              TOOLCHAIN: stable, 
+              TARGET: x86_64-apple-darwin,
+            }
+          - {
+              OS: windows-latest,
+              TOOLCHAIN: stable,
+              TARGET: aarch64-pc-windows-msvc,
+            }
+          - {
+              OS: windows-latest,
+              TOOLCHAIN: stable,
+              TARGET: x86_64-pc-windows-gnu,
+            }
+          - {
+              OS: windows-latest,
+              TOOLCHAIN: stable,
+              TARGET: x86_64-pc-windows-msvc,
+            }
+
+    steps:
+      - name: Checkout the repository
+        uses: actions/checkout@v3
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ matrix.build.TOOLCHAIN }}
+
+      - name: Install target
+        run: rustup target add ${{ matrix.build.TARGET }}
+
+      - name: Build for ${{ matrix.build.TARGET }}
+        if: ${{ matrix.build.TARGET != 'riscv64gc-unknown-linux-gnu' && matrix.build.TARGET != 'aarch64-linux-android' && matrix.build.TARGET != 'aarch64-unknown-linux-gnu' && matrix.build.TARGET != 'aarch64-unknown-linux-musl' && matrix.build.TARGET != 'x86_64-unknown-freebsd' && matrix.build.TARGET != 'x86_64-unknown-netbsd' }}
+        run: |
+          cargo build --profile rel-opt --locked --target ${{ matrix.build.TARGET }} --verbose
+
+      - name: Build (with cross) for ${{ matrix.build.TARGET }}
+        if: ${{ matrix.build.TARGET == 'riscv64gc-unknown-linux-gnu' || matrix.build.TARGET == 'aarch64-linux-android' || matrix.build.TARGET == 'aarch64-unknown-linux-gnu' || matrix.build.TARGET == 'aarch64-unknown-linux-musl' || matrix.build.TARGET == 'x86_64-unknown-freebsd' || matrix.build.TARGET == 'x86_64-unknown-netbsd' }}
+        run: |
+          cargo install cross --git https://github.com/cross-rs/cross
+          cross build --profile rel-opt --locked --target ${{ matrix.build.TARGET }} --verbose
+
+      - name: Prepare release assets
+        shell: bash
+        run: |
+          mkdir -p unic/bin/
+          cp {.github/CODEOWNERS,LICENSE,CHANGELOG.md} unic/
+          echo "${{ github.ref_name }}" > unic/VERSION
+          for bin in 'unic'; do
+            if [ "${{ matrix.build.OS }}" = "windows-latest" ]; then
+              bin="${bin}.exe"
+            fi
+            cp "target/${{ matrix.build.TARGET }}/rel-opt/${bin}" unic/bin/
+          done
+
+      - name: Create release artifacts
+        shell: bash
+        run: |
+          if [ "${{ matrix.build.OS }}" = "windows-latest" ]; then
+            7z a -tzip "unic-${{ github.ref_name }}-${{ matrix.build.TARGET }}.zip" \
+              unic/
+            CertUtil -hashfile "unic-${{ github.ref_name }}-${{ matrix.build.TARGET }}.zip" SHA512 \
+              > unic-${{ github.ref_name }}-${{ matrix.build.TARGET }}.zip.sha512
+          else
+            tar -czvf unic-${{ github.ref_name }}-${{ matrix.build.TARGET }}.tar.gz \
+              unic/
+            shasum -a 512 unic-${{ github.ref_name }}-${{ matrix.build.TARGET }}.tar.gz \
+              > unic-${{ github.ref_name }}-${{ matrix.build.TARGET }}.tar.gz.sha512
+          fi
+
+      # - name: Sign the release
+      #   if: matrix.build.OS != 'windows-latest'
+      #   run: |
+      #     echo "${{ secrets.GPG_RELEASE_KEY }}" | base64 --decode > private.key
+      #     echo "${{ secrets.GPG_PASSPHRASE }}" | gpg --pinentry-mode=loopback \
+      #       --passphrase-fd 0 --import private.key
+      #     echo "${{ secrets.GPG_PASSPHRASE }}" | gpg --pinentry-mode=loopback \
+      #       --passphrase-fd 0 --detach-sign \
+      #       unic-${{ github.ref_name }}-${{ matrix.build.TARGET }}.tar.gz
+
+      - name: Upload the binary releases
+        uses: svenstaro/upload-release-action@v2
+        with:
+          file: "unic-${{ github.ref_name }}-${{ matrix.build.TARGET }}*"
+          file_glob: true
+          overwrite: true
+          tag: ${{ github.ref }}
+          release_name: "${{ github.ref_name }}"
+          body: ${{ needs.changelog.outputs.release_body }}
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+
+  # publish-crates-io:
+  #   name: Publish on crates.io
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - name: Checkout the repository
+  #       uses: actions/checkout@v3
+  #
+  #     - name: Set up Rust
+  #        uses: dtolnay/rust-toolchain@stable
+  #        with:
+  #          toolchain: ${{ matrix.build.TOOLCHAIN }}
+  #          target: x86_64-unknown-linux-gnu
+  #
+  #     - name: Publish
+  #       run: cargo publish --locked --token ${{ secrets.CARGO_TOKEN }}
