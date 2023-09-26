@@ -25,7 +25,7 @@ name = "unic"
 path = "src/bin/main.rs"
 
 [dependencies]
-clap = { version = "4.2.7", features = ["derive"] }
+clap = { version = "4.4.5", features = ["derive"] }
 tokio = { version = "1.28.1", features = ["rt-multi-thread", "macros"] }
 
 [profile.rel-opt]
