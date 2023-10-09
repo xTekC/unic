@@ -26,7 +26,7 @@ path = "src/bin/main.rs"
 
 [dependencies]
 clap = { version = "4.2.7", features = ["derive"] }
-tokio = { version = "1.28.1", features = ["rt-multi-thread", "macros"] }
+tokio = { version = "1.33.0", features = ["rt-multi-thread", "macros"] }
 
 [profile.rel-opt]
 inherits = "release"
